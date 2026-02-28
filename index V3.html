@@ -1,0 +1,994 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Voice Similarity Workspace</title>
+
+  <!-- ReactFlow CSS -->
+  <link rel="stylesheet" href="https://unpkg.com/reactflow@11.11.4/dist/base.css" />
+  <link rel="stylesheet" href="https://unpkg.com/reactflow@11.11.4/dist/style.css" />
+
+  <style>
+    html, body { height: 100%; margin: 0; }
+    body { font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial; }
+    #root { height: 100vh; }
+    .react-flow__attribution { display: none !important; }
+    * { box-sizing: border-box; }
+
+    /* simple utility-ish */
+    .row { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+    .col { display:flex; flex-direction:column; gap:8px; }
+    .truncate { overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
+    .chip { display:inline-flex; align-items:center; gap:6px; font-size:12px; padding:6px 10px; border-radius:999px; border:1px solid var(--border); background:var(--pill); color:var(--text); cursor:pointer; }
+    .chip:hover { filter: brightness(1.05); }
+    .chip-x { opacity:0.75; font-weight:700; }
+    .divider { height:1px; width:100%; background:var(--border); }
+    .muted { color: var(--muted); }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
+    .btn { user-select:none; }
+  </style>
+</head>
+
+<body>
+  <div id="root"></div>
+
+  <script type="module">
+    import React, { useCallback, useEffect, useMemo, useRef, useState } from "https://esm.sh/react@18.2.0";
+    import { createRoot } from "https://esm.sh/react-dom@18.2.0/client";
+    import ReactFlow, {
+      Background,
+      Controls,
+      MiniMap,
+      addEdge,
+      useEdgesState,
+      useNodesState,
+      Handle,
+      Position,
+    } from "https://esm.sh/reactflow@11.11.4";
+    import * as Lucide from "https://esm.sh/lucide-react@0.451.0";
+    import htm from "https://esm.sh/htm@3.1.1";
+
+    const html = htm.bind(React.createElement);
+
+    // -----------------------------
+    // Speaking styles (Option A picker)
+    // -----------------------------
+    const SPEAKING_STYLES = [
+      "Action Obstructed",
+      "Action Shout",
+      "Action Whisper",
+      "Anger 1 - Irritation Frustrated",
+      "Anger 2 - Rage Shout",
+      "Anger 3 - Loud Screaming",
+      "Confused 1 - Disoriented",
+      "Confused 2 - Puzzled",
+      "Confused 3 - Perplexed",
+      "Disgust 1 - Distaste",
+      "Disgust 2 - Revulsion",
+      "Disgust 3 - Contempt",
+      "Drunk",
+      "Exertion",
+      "Fear 1 - Whisper",
+      "Fear 2 - Scared",
+      "Joy 1 - Smiling",
+      "Joy 2 - Happy",
+      "Joy 3 - Giggly Laughter",
+      "Malice 1",
+      "Narration 1 - Story",
+      "Narration 2 - Host",
+      "Narration 3 - Drama",
+      "Neutral 1 - Calm",
+      "Neutral 2 - Interested",
+      "Neutral 3 - Excited",
+      "News Headlines",
+      "Panic 1 - Anxious",
+      "Panic 2 - Whimper Stutter",
+      "Panic 3 - Crying Hyperventilating",
+      "Phone",
+      "Pleading",
+      "Romantic 1 - Intimate Affectionate",
+      "Romantic 2 - Sentimental",
+      "Romantic 3 - Dramatic Loud",
+      "Sarcasm",
+      "Sleepy",
+      "Sadness 1 - Melancholic Contemplative",
+      "Sadness 2 - Muffled",
+      "Sadness 3 - Loud Wailing",
+      "Surprise  1 - Awe Amazed",
+      "Surprise  2 - Startled",
+      "Surprise  3 - Baffled Shocked",
+      "Authoritative",
+    ];
+
+    function styleCategory(name) {
+      const m = String(name || "").match(/^([A-Za-z]+)\s*\d*\s*-/);
+      if (m && m[1]) return m[1];
+      // categories for single words like "Drunk", "Phone", etc.
+      const first = String(name || "").split(" ")[0];
+      return first || "Other";
+    }
+
+    // -----------------------------
+    // Simple UI primitives (no external UI libs)
+    // -----------------------------
+    function Card({ className = "", children }) {
+      return html`
+        <div
+          className=${"rounded-2xl border shadow-lg " + className}
+          style=${{ background: "var(--card)", borderColor: "var(--border)" }}
+        >
+          ${children}
+        </div>
+      `;
+    }
+    function CardHeader({ className = "", children }) {
+      return html`
+        <div className=${"px-4 py-3 border-b " + className} style=${{ borderColor: "var(--border)" }}>
+          ${children}
+        </div>
+      `;
+    }
+    function CardTitle({ className = "", children }) {
+      return html`<div className=${"font-semibold " + className} style=${{ color: "var(--text)" }}>${children}</div>`;
+    }
+    function CardContent({ className = "", children }) {
+      return html`<div className=${"px-4 py-3 " + className}>${children}</div>`;
+    }
+    function Button({ className = "", variant = "primary", size = "md", type = "button", children, ...props }) {
+      const base =
+        "btn inline-flex items-center justify-center gap-2 rounded-xl border text-sm font-medium transition";
+      const sizes = { sm: { height: 32, padding: "0 10px" }, md: { height: 36, padding: "0 12px" } };
+      const variants = {
+        primary: { background: "var(--primary)", color: "var(--primaryText)", borderColor: "transparent" },
+        secondary: { background: "var(--mutedBg)", color: "var(--text)", borderColor: "var(--border)" },
+        destructive: { background: "var(--danger)", color: "#fff", borderColor: "transparent" },
+      };
+      const sz = sizes[size] || sizes.md;
+      return html`
+        <button
+          type=${type}
+          className=${base + " " + className}
+          style=${{ ...(variants[variant] || variants.primary), height: sz.height, padding: sz.padding }}
+          ...${props}
+        >
+          ${children}
+        </button>
+      `;
+    }
+    function Input({ className = "", style = {}, ...props }) {
+      return html`
+        <input
+          className=${"h-9 w-full rounded-xl border px-3 text-sm outline-none " + className}
+          style=${{ background: "var(--input)", color: "var(--text)", borderColor: "var(--border)", ...style }}
+          ...${props}
+        />
+      `;
+    }
+    function Textarea({ className = "", style = {}, ...props }) {
+      return html`
+        <textarea
+          className=${"w-full rounded-xl border px-3 py-2 text-sm outline-none " + className}
+          style=${{ background: "var(--input)", color: "var(--text)", borderColor: "var(--border)", ...style }}
+          ...${props}
+        />
+      `;
+    }
+    function Label({ className = "", children }) {
+      return html`<div className=${"text-xs font-medium " + className} style=${{ color: "var(--muted)" }}>${children}</div>`;
+    }
+
+    // -----------------------------
+    // Storage + share
+    // -----------------------------
+    const LS_KEY = "voice_similarity_graph_v1";
+    const THEME_KEY = "voice_similarity_theme_v1";
+    const URL_HASH_PREFIX = "vsgraph=";
+
+    function base64UrlEncode(bytes) {
+      let binary = "";
+      for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+      const b64 = btoa(binary);
+      return b64.replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+    }
+    function base64UrlDecodeToBytes(b64url) {
+      const b64 = b64url.replace(/-/g, "+").replace(/_/g, "/") + "===".slice((b64url.length + 3) % 4);
+      const binary = atob(b64);
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+      return bytes;
+    }
+    function encodeGraphToHash(obj) {
+      const json = JSON.stringify(obj);
+      const bytes = new TextEncoder().encode(json);
+      const b64url = base64UrlEncode(bytes);
+      return `#${URL_HASH_PREFIX}${b64url}`;
+    }
+    function decodeGraphFromHash(hash) {
+      if (!hash || !hash.startsWith(`#${URL_HASH_PREFIX}`)) return null;
+      const b64url = hash.slice((`#${URL_HASH_PREFIX}`).length);
+      const bytes = base64UrlDecodeToBytes(b64url);
+      const json = new TextDecoder().decode(bytes);
+      const parsed = JSON.parse(json);
+      return parsed && typeof parsed === "object" ? parsed : null;
+    }
+
+    function uid(prefix = "n") {
+      return `${prefix}_${Math.random().toString(16).slice(2)}_${Date.now().toString(16)}`;
+    }
+
+    function normalizeEdges(es) {
+      return (es || []).map((e) => ({
+        type: "smoothstep",
+        labelShowBg: true,
+        labelBgPadding: [8, 4],
+        labelBgBorderRadius: 6,
+        style: { stroke: "var(--edge)" },
+        labelStyle: { fill: "var(--labelText)", fontWeight: 700 },
+        labelBgStyle: { fill: "var(--labelBg)", stroke: "var(--border)" },
+        ...e,
+      }));
+    }
+
+    function downloadJson(filename, obj) {
+      const blob = new Blob([JSON.stringify(obj, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      a.click();
+      URL.revokeObjectURL(url);
+    }
+
+    function safeParseGraphJson(text) {
+      const parsed = JSON.parse(text);
+      if (!parsed || typeof parsed !== "object") throw new Error("Invalid JSON object");
+      if (!Array.isArray(parsed.nodes) || !Array.isArray(parsed.edges)) {
+        throw new Error("JSON must contain nodes[] and edges[]");
+      }
+      return parsed;
+    }
+
+    // -----------------------------
+    // Style Picker (Option A)
+    // -----------------------------
+    function StylesPicker({ value, onChange }) {
+      const [q, setQ] = useState("");
+      const selected = useMemo(() => new Set(value || []), [value]);
+
+      const grouped = useMemo(() => {
+        const query = q.trim().toLowerCase();
+        const list = SPEAKING_STYLES.filter((s) => !query || s.toLowerCase().includes(query));
+        const map = new Map();
+        for (const s of list) {
+          const cat = styleCategory(s);
+          if (!map.has(cat)) map.set(cat, []);
+          map.get(cat).push(s);
+        }
+        // stable order by category name
+        const cats = Array.from(map.keys()).sort((a, b) => a.localeCompare(b));
+        return cats.map((c) => [c, map.get(c)]);
+      }, [q]);
+
+      const toggle = useCallback((name) => {
+        const next = new Set(selected);
+        if (next.has(name)) next.delete(name);
+        else next.add(name);
+        onChange(Array.from(next));
+      }, [selected, onChange]);
+
+      const clearAll = useCallback(() => onChange([]), [onChange]);
+
+      const selectAllFiltered = useCallback(() => {
+        const query = q.trim().toLowerCase();
+        const filtered = SPEAKING_STYLES.filter((s) => !query || s.toLowerCase().includes(query));
+        const next = new Set(value || []);
+        for (const s of filtered) next.add(s);
+        onChange(Array.from(next));
+      }, [q, value, onChange]);
+
+      const removeChip = useCallback((name) => {
+        const next = (value || []).filter((x) => x !== name);
+        onChange(next);
+      }, [value, onChange]);
+
+      return html`
+        <div className="col" style=${{ gap: 10 }}>
+          <div className="row" style=${{ justifyContent: "space-between" }}>
+            <div className="row">
+              <${Input}
+                value=${q}
+                placeholder="Search styles…"
+                onInput=${(e) => setQ(e.target.value)}
+                style=${{ width: 260 }}
+              />
+            </div>
+            <div className="row">
+              <${Button} variant="secondary" size="sm" onClick=${selectAllFiltered}>Select filtered</${Button}>
+              <${Button} variant="secondary" size="sm" onClick=${clearAll}>Clear</${Button}>
+            </div>
+          </div>
+
+          ${(value && value.length) ? html`
+            <div className="row" style=${{ gap: 6 }}>
+              ${value.map((s) => html`
+                <span className="chip" key=${s} title="Click to remove" onClick=${() => removeChip(s)}>
+                  ${s} <span className="chip-x">×</span>
+                </span>
+              `)}
+            </div>
+          ` : html`<div className="muted" style=${{ fontSize: 12 }}><i>No styles selected.</i></div>`}
+
+          <div className="divider"></div>
+
+          <div style=${{
+            maxHeight: 260,
+            overflow: "auto",
+            border: "1px solid var(--border)",
+            borderRadius: 14,
+            background: "var(--input)",
+            padding: 10
+          }}>
+            ${grouped.map(([cat, items]) => html`
+              <div key=${cat} style=${{ marginBottom: 10 }}>
+                <div style=${{ fontSize: 12, fontWeight: 700, color: "var(--muted)", margin: "6px 2px" }}>${cat}</div>
+                <div className="col" style=${{ gap: 6 }}>
+                  ${items.map((s) => {
+                    const checked = selected.has(s);
+                    return html`
+                      <label key=${s} className="row" style=${{ cursor: "pointer", justifyContent: "space-between", gap: 10 }}>
+                        <span className="row" style=${{ gap: 10 }}>
+                          <input type="checkbox" checked=${checked} onChange=${() => toggle(s)} />
+                          <span style=${{ fontSize: 13, color: "var(--text)" }}>${s}</span>
+                        </span>
+                      </label>
+                    `;
+                  })}
+                </div>
+              </div>
+            `)}
+          </div>
+
+          <div className="muted" style=${{ fontSize: 12 }}>
+            Tip: use <span className="mono">Select filtered</span> after searching to bulk-add.
+          </div>
+        </div>
+      `;
+    }
+
+    // -----------------------------
+    // Custom node
+    // -----------------------------
+    function VoiceNode({ data, selected }) {
+      const styles = (data && data.styles && data.styles.length) ? data.styles : [];
+      return html`
+        <div
+          className=${"rounded-2xl border shadow-lg " + (selected ? "ring-2" : "")}
+          style=${{ background: "var(--card)", borderColor: "var(--border)", color: "var(--text)", minWidth: 240, maxWidth: 340 }}
+        >
+          <div className="px-3 py-2 border-b row" style=${{ borderColor: "var(--border)", justifyContent:"space-between", alignItems:"flex-start" }}>
+            <div style=${{ minWidth: 0 }}>
+              <div className="truncate" style=${{ fontWeight: 700 }}>${data?.name || "Untitled Voice"}</div>
+              <div className="truncate" style=${{ fontSize: 12, color: "var(--muted)" }}>${data?.voiceId ? `ID: ${data.voiceId}` : "No ID"}</div>
+            </div>
+            <div style=${{ fontSize: 12, padding: "6px 10px", borderRadius: 999, border: "1px solid var(--border)", background: "var(--pill)", color: "var(--muted)", whiteSpace:"nowrap" }}>
+              ${data?.group || "Ungrouped"}
+            </div>
+          </div>
+
+          <div className="px-3 py-2">
+            <div style=${{ fontSize: 12, color: "var(--muted)", marginBottom: 6 }}>Speaking styles</div>
+            ${styles.length ? html`
+              <div className="row" style=${{ gap: 6 }}>
+                ${styles.slice(0, 8).map((s) => html`
+                  <span key=${s} className="chip" style=${{ cursor: "default" }} title=${s}>${s}</span>
+                `)}
+                ${styles.length > 8 ? html`
+                  <span className="chip" style=${{ cursor:"default" }}>+${styles.length - 8}</span>
+                ` : null}
+              </div>
+            ` : html`<div style=${{ fontSize: 12, color: "var(--muted)" }}><i>None</i></div>`}
+
+            ${data?.notes ? html`
+              <div style=${{ marginTop: 10, fontSize: 12, color: "var(--muted)" }}>${data.notes}</div>
+            ` : null}
+          </div>
+
+          <${Handle} type="target" position=${Position.Left} className="!w-3 !h-3" style=${{ background: "var(--edge)" }} />
+          <${Handle} type="source" position=${Position.Right} className="!w-3 !h-3" style=${{ background: "var(--edge)" }} />
+        </div>
+      `;
+    }
+    const nodeTypes = { voice: VoiceNode };
+
+    // -----------------------------
+    // Main app
+    // -----------------------------
+    function VoiceSimilarityWorkspace() {
+      const [theme, setTheme] = useState(() => {
+        try { return localStorage.getItem(THEME_KEY) || "dark"; } catch { return "dark"; }
+      });
+
+      const [nodes, setNodes, onNodesChange] = useNodesState([]);
+      const [edges, setEdges, onEdgesChange] = useEdgesState([]);
+
+      const [search, setSearch] = useState("");
+      const [selectedNodeId, setSelectedNodeId] = useState(null);
+      const [selectedEdgeId, setSelectedEdgeId] = useState(null);
+
+      const selectedNode = useMemo(() => nodes.find((n) => n.id === selectedNodeId) || null, [nodes, selectedNodeId]);
+      const selectedEdge = useMemo(() => edges.find((e) => e.id === selectedEdgeId) || null, [edges, selectedEdgeId]);
+
+      const [form, setForm] = useState({ name: "", voiceId: "", group: "Ungrouped", styles: [], notes: "" });
+      const [edgeLabel, setEdgeLabel] = useState("");
+
+      const [isJsonModalOpen, setIsJsonModalOpen] = useState(false);
+      const [jsonModalMode, setJsonModalMode] = useState("copy"); // "copy" | "paste"
+      const [jsonText, setJsonText] = useState("");
+      const [jsonError, setJsonError] = useState(null);
+      const [jsonInfo, setJsonInfo] = useState(null);
+      const jsonTextareaRef = useRef(null);
+
+      const fileInputRef = useRef(null);
+
+      const themeVars = useMemo(() => {
+        if (theme === "light") {
+          return {
+            "--bg": "#f6f6f7",
+            "--card": "#ffffff",
+            "--text": "#0b0d12",
+            "--muted": "rgba(11,13,18,0.60)",
+            "--border": "rgba(11,13,18,0.12)",
+            "--input": "#ffffff",
+            "--primary": "#0b0d12",
+            "--primaryText": "#ffffff",
+            "--danger": "#dc2626",
+            "--pill": "rgba(11,13,18,0.06)",
+            "--edge": "#0b0d12",
+            "--labelBg": "rgba(11,13,18,0.10)",
+            "--labelText": "#0b0d12",
+            "--mutedBg": "rgba(11,13,18,0.06)",
+          };
+        }
+        return {
+          "--bg": "#0b0d12",
+          "--card": "#111318",
+          "--text": "rgba(255,255,255,0.92)",
+          "--muted": "rgba(255,255,255,0.65)",
+          "--border": "rgba(255,255,255,0.14)",
+          "--input": "#1b1f27",
+          "--primary": "#ffffff",
+          "--primaryText": "#0b0d12",
+          "--danger": "#ef4444",
+          "--pill": "rgba(255,255,255,0.10)",
+          "--edge": "#ffffff",
+          "--labelBg": "rgba(255,255,255,0.90)",
+          "--labelText": "#0b0d12",
+          "--mutedBg": "rgba(255,255,255,0.10)",
+        };
+      }, [theme]);
+
+      const defaultEdgeOptions = useMemo(() => normalizeEdges([{}])[0], []);
+
+      // Load: hash -> localStorage -> seed
+      const [shareLoadError, setShareLoadError] = useState(null);
+      useEffect(() => {
+        try {
+          const rawHash = window.location.hash || "";
+          const fromHash = decodeGraphFromHash(rawHash);
+          if (fromHash?.nodes || fromHash?.edges) {
+            setShareLoadError(null);
+            if (fromHash.theme === "dark" || fromHash.theme === "light") {
+              setTheme(fromHash.theme);
+              try { localStorage.setItem(THEME_KEY, fromHash.theme); } catch {}
+            }
+            setNodes(fromHash.nodes || []);
+            setEdges(normalizeEdges(fromHash.edges || []));
+            return;
+          }
+        } catch {
+          if (window.location.hash.startsWith(`#${URL_HASH_PREFIX}`)) {
+            setShareLoadError("This share link looks corrupted or truncated. Try copying again, or use Copy JSON.");
+          }
+        }
+
+        try {
+          const raw = localStorage.getItem(LS_KEY);
+          if (raw) {
+            const parsed = JSON.parse(raw);
+            setNodes(parsed.nodes || []);
+            setEdges(normalizeEdges(parsed.edges || []));
+            return;
+          }
+        } catch {}
+
+        const a = uid("v");
+        const b = uid("v");
+        setNodes([
+          {
+            id: a,
+            type: "voice",
+            position: { x: 120, y: 120 },
+            data: { name: "Voice A", voiceId: "", group: "English", styles: ["Neutral 1 - Calm"], notes: "Starter node" },
+          },
+          {
+            id: b,
+            type: "voice",
+            position: { x: 520, y: 140 },
+            data: { name: "Voice B", voiceId: "", group: "English", styles: ["News Headlines"], notes: "" },
+          },
+        ]);
+        setEdges(normalizeEdges([{ id: uid("e"), source: a, target: b, label: "8/10 – similar timbre", animated: true }]));
+      }, []);
+
+      // Autosave
+      useEffect(() => {
+        try {
+          localStorage.setItem(LS_KEY, JSON.stringify({ nodes, edges }));
+          localStorage.setItem(THEME_KEY, theme);
+        } catch {}
+      }, [nodes, edges, theme]);
+
+      // If opened via share-link, keep URL updated
+      const hashTimerRef = useRef(null);
+      useEffect(() => {
+        const isShare = window.location.hash.startsWith(`#${URL_HASH_PREFIX}`);
+        if (!isShare) return;
+
+        if (hashTimerRef.current) clearTimeout(hashTimerRef.current);
+        hashTimerRef.current = setTimeout(() => {
+          try {
+            const newHash = encodeGraphToHash({ nodes, edges, theme });
+            window.history.replaceState(null, "", `${window.location.pathname}${window.location.search}${newHash}`);
+          } catch {}
+        }, 500);
+
+        return () => {
+          if (hashTimerRef.current) clearTimeout(hashTimerRef.current);
+        };
+      }, [nodes, edges, theme]);
+
+      // Search dimming
+      const nodesForView = useMemo(() => {
+        const q = search.trim().toLowerCase();
+        if (!q) return nodes;
+
+        const matches = new Set(
+          nodes
+            .filter((n) => {
+              const d = n.data || {};
+              const hay = [d.name, d.voiceId, d.group, (d.styles || []).join(" "), d.notes].join(" ").toLowerCase();
+              return hay.includes(q);
+            })
+            .map((n) => n.id)
+        );
+
+        return nodes.map((n) => ({ ...n, style: matches.has(n.id) ? undefined : { opacity: 0.22 } }));
+      }, [nodes, search]);
+
+      // Selection sync
+      useEffect(() => {
+        if (!selectedNode) return;
+        setSelectedEdgeId(null);
+        setForm({
+          name: selectedNode.data?.name || "",
+          voiceId: selectedNode.data?.voiceId || "",
+          group: selectedNode.data?.group || "Ungrouped",
+          styles: selectedNode.data?.styles || [],
+          notes: selectedNode.data?.notes || "",
+        });
+      }, [selectedNodeId]);
+
+      useEffect(() => {
+        if (!selectedEdge) return;
+        setSelectedNodeId(null);
+        setEdgeLabel(selectedEdge.label || "");
+      }, [selectedEdgeId]);
+
+      const onConnect = useCallback((params) => {
+        setEdges((eds) =>
+          addEdge(
+            normalizeEdges([{ ...params, id: uid("e"), label: "", animated: true }])[0],
+            eds
+          )
+        );
+      }, []);
+
+      const addVoiceNode = useCallback(() => {
+        const id = uid("v");
+        setNodes((ns) => [
+          ...ns,
+          {
+            id,
+            type: "voice",
+            position: { x: 160 + Math.random() * 280, y: 120 + Math.random() * 260 },
+            data: { name: "New Voice", voiceId: "", group: "Ungrouped", styles: [], notes: "" },
+          },
+        ]);
+        setSelectedNodeId(id);
+        setSelectedEdgeId(null);
+      }, []);
+
+      const applyEdits = useCallback(() => {
+        if (!selectedNodeId) return;
+        setNodes((ns) =>
+          ns.map((n) =>
+            n.id === selectedNodeId
+              ? { ...n, data: { ...n.data, name: form.name, voiceId: form.voiceId, group: form.group, styles: form.styles, notes: form.notes } }
+              : n
+          )
+        );
+      }, [selectedNodeId, form]);
+
+      const saveEdgeLabel = useCallback(() => {
+        if (!selectedEdgeId) return;
+        setEdges((es) => es.map((e) => (e.id === selectedEdgeId ? { ...e, label: edgeLabel } : e)));
+      }, [selectedEdgeId, edgeLabel]);
+
+      const deleteSelectedNode = useCallback(() => {
+        if (!selectedNodeId) return;
+        setNodes((ns) => ns.filter((n) => n.id !== selectedNodeId));
+        setEdges((es) => es.filter((e) => e.source !== selectedNodeId && e.target !== selectedNodeId));
+        setSelectedNodeId(null);
+      }, [selectedNodeId]);
+
+      const deleteSelectedEdge = useCallback(() => {
+        if (!selectedEdgeId) return;
+        setEdges((es) => es.filter((e) => e.id !== selectedEdgeId));
+        setSelectedEdgeId(null);
+      }, [selectedEdgeId]);
+
+      const exportGraph = useCallback(() => {
+        downloadJson(`voice-similarity-graph-${new Date().toISOString().slice(0, 10)}.json`, { nodes, edges, theme });
+      }, [nodes, edges, theme]);
+
+      const openCopyJson = useCallback(() => {
+        setJsonModalMode("copy");
+        setJsonError(null);
+        setJsonInfo("Select all and copy (Ctrl/Cmd+C).");
+        setJsonText(JSON.stringify({ nodes, edges, theme }, null, 2));
+        setIsJsonModalOpen(true);
+      }, [nodes, edges, theme]);
+
+      const openPasteJson = useCallback(() => {
+        setJsonModalMode("paste");
+        setJsonError(null);
+        setJsonInfo(null);
+        setJsonText("");
+        setIsJsonModalOpen(true);
+      }, []);
+
+      const importFromJsonText = useCallback(() => {
+        try {
+          setJsonError(null);
+          const parsed = safeParseGraphJson(jsonText);
+          if (parsed.theme === "dark" || parsed.theme === "light") setTheme(parsed.theme);
+          setNodes(parsed.nodes);
+          setEdges(normalizeEdges(parsed.edges));
+          setSelectedNodeId(null);
+          setSelectedEdgeId(null);
+          setIsJsonModalOpen(false);
+        } catch (e) {
+          setJsonError(e?.message || "Invalid JSON");
+        }
+      }, [jsonText]);
+
+      const importGraph = useCallback((file) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+          try {
+            const parsed = safeParseGraphJson(String(reader.result || "{}"));
+            if (parsed.theme === "dark" || parsed.theme === "light") setTheme(parsed.theme);
+            setNodes(parsed.nodes || []);
+            setEdges(normalizeEdges(parsed.edges || []));
+            setSelectedNodeId(null);
+            setSelectedEdgeId(null);
+          } catch {
+            alert("Could not import JSON. Make sure it contains nodes[] and edges[].");
+          }
+        };
+        reader.readAsText(file);
+      }, []);
+
+      const clearAll = useCallback(() => {
+        if (!confirm("Clear the entire workspace? This cannot be undone.")) return;
+        setNodes([]);
+        setEdges([]);
+        setSelectedNodeId(null);
+        setSelectedEdgeId(null);
+        try { localStorage.removeItem(LS_KEY); } catch {}
+      }, []);
+
+      const copyShareLink = useCallback(() => {
+        try {
+          const hash = encodeGraphToHash({ nodes, edges, theme });
+          const base = window.location.href.split("#")[0];
+          const url = `${base}${hash}`;
+          window.prompt("Copy this link:", url);
+        } catch {
+          alert("Could not create share link.");
+        }
+      }, [nodes, edges, theme]);
+
+      const toggleTheme = useCallback(() => setTheme((t) => (t === "dark" ? "light" : "dark")), []);
+
+      // Modal focus/select
+      useEffect(() => {
+        if (!isJsonModalOpen) return;
+        const t = setTimeout(() => {
+          const el = jsonTextareaRef.current;
+          if (!el) return;
+          el.focus();
+          if (jsonModalMode === "copy") el.setSelectionRange(0, el.value.length);
+        }, 0);
+        return () => clearTimeout(t);
+      }, [isJsonModalOpen, jsonModalMode]);
+
+      const tryExecCopy = useCallback(() => {
+        const el = jsonTextareaRef.current;
+        if (!el) return;
+        el.focus();
+        el.setSelectionRange(0, el.value.length);
+        try {
+          const ok = document.execCommand?.("copy");
+          setJsonInfo(ok ? "Copied. If it didn’t, press Ctrl/Cmd+C." : "Select all and press Ctrl/Cmd+C.");
+        } catch {
+          setJsonInfo("Select all and press Ctrl/Cmd+C.");
+        }
+      }, []);
+
+      const I = Lucide;
+
+      return html`
+        <div
+          style=${{
+            height: "100vh",
+            background: "var(--bg)",
+            ...themeVars,
+            padding: 12,
+            display: "grid",
+            gridTemplateColumns: "repeat(12, minmax(0, 1fr))",
+            gap: 12,
+          }}
+        >
+          <!-- Graph -->
+          <div style=${{ gridColumn: "span 12 / span 12" }}>
+            <${Card} className="overflow-hidden">
+              <${CardHeader}>
+                <div className="row" style=${{ justifyContent: "space-between", alignItems: "center" }}>
+                  <${CardTitle} className="row" style=${{ gap: 8 }}>
+                    <${I.Link2} size=${16} /> Voice Similarity Workspace
+                    <span className="muted" style=${{ fontSize: 12, fontWeight: 400 }}>
+                      ${theme === "dark" ? "Dark" : "Light"}
+                    </span>
+                  </${CardTitle}>
+
+                  <div className="row">
+                    <div style=${{ position: "relative" }}>
+                      <div style=${{ position: "absolute", left: 8, top: "50%", transform: "translateY(-50%)", color: "var(--muted)" }}>
+                        <${I.Search} size=${16} />
+                      </div>
+                      <${Input}
+                        value=${search}
+                        onInput=${(e) => setSearch(e.target.value)}
+                        placeholder="Search voices/styles/groups…"
+                        style=${{ paddingLeft: 32, width: 240 }}
+                      />
+                    </div>
+
+                    <${Button} onClick=${addVoiceNode}><${I.Plus} size=${16} /> Add voice</${Button}>
+                    <${Button} variant="secondary" onClick=${toggleTheme}>Toggle ${theme === "dark" ? "Light" : "Dark"}</${Button}>
+                    <${Button} variant="secondary" onClick=${openCopyJson}><${I.ClipboardCopy} size=${16} /> Copy JSON</${Button}>
+                    <${Button} variant="secondary" onClick=${openPasteJson}><${I.ClipboardPaste} size=${16} /> Paste JSON</${Button}>
+                    <${Button} variant="secondary" onClick=${exportGraph}><${I.Download} size=${16} /> Export</${Button}>
+                    <${Button} variant="secondary" onClick=${() => fileInputRef.current?.click()}><${I.Upload} size=${16} /> Import</${Button}>
+                    <${Button} variant="secondary" onClick=${copyShareLink}><${I.Link2} size=${16} /> Copy link</${Button}>
+                    <${Button} variant="destructive" onClick=${clearAll}><${I.Trash2} size=${16} /> Clear</${Button}>
+
+                    <input
+                      ref=${fileInputRef}
+                      type="file"
+                      accept="application/json"
+                      style=${{ display: "none" }}
+                      onChange=${(e) => {
+                        const f = e.target.files?.[0];
+                        if (f) importGraph(f);
+                        e.target.value = "";
+                      }}
+                    />
+                  </div>
+                </div>
+
+                <div className="muted" style=${{ fontSize: 12, marginTop: 6 }}>
+                  Drag nodes. Connect from right socket → left socket. Click an edge to label it.
+                </div>
+
+                ${shareLoadError ? html`
+                  <div className="muted" style=${{ fontSize: 12, marginTop: 6 }}>
+                    <span style=${{ color: theme === "dark" ? "#fca5a5" : "#b91c1c" }}>Share link issue:</span> ${shareLoadError}
+                  </div>
+                ` : null}
+              </${CardHeader}>
+
+              <${CardContent} className="p-0">
+                <div style=${{ width: "100%", height: "62vh" }}>
+                  <${ReactFlow}
+                    nodes=${nodesForView}
+                    edges=${edges}
+                    onNodesChange=${onNodesChange}
+                    onEdgesChange=${onEdgesChange}
+                    onConnect=${onConnect}
+                    nodeTypes=${nodeTypes}
+                    fitView=${true}
+                    onNodeClick=${(_, n) => { setSelectedNodeId(n.id); setSelectedEdgeId(null); }}
+                    onEdgeClick=${(_, e) => { setSelectedEdgeId(e.id); setSelectedNodeId(null); }}
+                    onPaneClick=${() => { setSelectedNodeId(null); setSelectedEdgeId(null); }}
+                    defaultEdgeOptions=${defaultEdgeOptions}
+                    proOptions=${{ hideAttribution: true }}
+                  >
+                    <${Background} color=${theme === "dark" ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.10)"} gap=${22} />
+                    <${Controls} />
+                    <${MiniMap}
+                      zoomable=${true}
+                      pannable=${true}
+                      style=${{ background: theme === "dark" ? "#0b0d12" : "#ffffff" }}
+                      nodeColor=${() => (theme === "dark" ? "#ffffff" : "#0b0d12")}
+                      maskColor=${theme === "dark" ? "rgba(11,13,18,0.75)" : "rgba(255,255,255,0.70)"}
+                    />
+                  </${ReactFlow}>
+                </div>
+              </${CardContent}>
+            </${Card}>
+          </div>
+
+          <!-- Inspector -->
+          <div style=${{ gridColumn: "span 12 / span 12" }}>
+            <${Card}>
+              <${CardHeader}>
+                <${CardTitle}>Inspector</${CardTitle}>
+                <div className="muted" style=${{ fontSize: 12, marginTop: 4 }}>
+                  Select a voice node or click an edge to edit its label.
+                </div>
+              </${CardHeader}>
+
+              <${CardContent}>
+                ${(!selectedNode && !selectedEdge) ? html`
+                  <div className="muted" style=${{ fontSize: 14 }}>
+                    Nothing selected.
+                    <div style=${{ marginTop: 6, fontSize: 12 }}>Tip: click a node to edit metadata, or click a link to label it.</div>
+                  </div>
+                ` : null}
+
+                ${selectedEdge ? html`
+                  <div className="col" style=${{ gap: 10 }}>
+                    <div>
+                      <${Label}>Edge label (score / rationale)</${Label}>
+                      <${Input}
+                        value=${edgeLabel}
+                        onInput=${(e) => setEdgeLabel(e.target.value)}
+                        placeholder="e.g., 8/10 – similar timbre"
+                      />
+                    </div>
+
+                    <div className="row">
+                      <${Button} onClick=${saveEdgeLabel} style=${{ flex: 1 }}>Save label</${Button}>
+                      <${Button} variant="destructive" onClick=${deleteSelectedEdge}><${I.Trash2} size=${16} /> Delete</${Button}>
+                    </div>
+                  </div>
+                ` : null}
+
+                ${selectedNode ? html`
+                  <div className="col" style=${{ gap: 12 }}>
+                    <div className="col" style=${{ gap: 6 }}>
+                      <${Label}>Name</${Label}>
+                      <${Input} value=${form.name} onInput=${(e) => setForm((f) => ({ ...f, name: e.target.value }))} />
+                    </div>
+
+                    <div className="col" style=${{ gap: 6 }}>
+                      <${Label}>Voice ID (optional)</${Label}>
+                      <${Input} value=${form.voiceId} onInput=${(e) => setForm((f) => ({ ...f, voiceId: e.target.value }))} />
+                    </div>
+
+                    <div className="col" style=${{ gap: 6 }}>
+                      <${Label}>Group</${Label}>
+                      <${Input} value=${form.group} onInput=${(e) => setForm((f) => ({ ...f, group: e.target.value }))} />
+                    </div>
+
+                    <div className="col" style=${{ gap: 6 }}>
+                      <${Label}>Speaking styles</${Label}>
+                      <${StylesPicker}
+                        value=${form.styles}
+                        onChange=${(styles) => setForm((f) => ({ ...f, styles }))}
+                      />
+                    </div>
+
+                    <div className="col" style=${{ gap: 6 }}>
+                      <${Label}>Notes</${Label}>
+                      <${Textarea} rows=${4} value=${form.notes} onInput=${(e) => setForm((f) => ({ ...f, notes: e.target.value }))} />
+                    </div>
+
+                    <div className="row">
+                      <${Button} onClick=${applyEdits} style=${{ flex: 1 }}>Save changes</${Button}>
+                      <${Button} variant="destructive" onClick=${deleteSelectedNode}><${I.Trash2} size=${16} /> Delete</${Button}>
+                    </div>
+                  </div>
+                ` : null}
+              </${CardContent}>
+            </${Card}>
+          </div>
+
+          <!-- JSON Modal -->
+          ${isJsonModalOpen ? html`
+            <div style=${{
+              position: "fixed", inset: 0, zIndex: 9999,
+              display: "flex", alignItems: "center", justifyContent: "center",
+              padding: 16, background: "rgba(0,0,0,0.55)"
+            }}>
+              <div style=${{
+                width: "100%", maxWidth: 900,
+                borderRadius: 16, border: "1px solid var(--border)",
+                background: "var(--card)",
+                boxShadow: "0 25px 60px rgba(0,0,0,0.35)"
+              }}>
+                <div style=${{
+                  padding: "12px 16px",
+                  borderBottom: "1px solid var(--border)",
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "center"
+                }}>
+                  <div style=${{ fontWeight: 700, color: "var(--text)" }}>
+                    ${jsonModalMode === "copy" ? "Copy Graph JSON" : "Paste Graph JSON"}
+                  </div>
+                  <${Button} variant="secondary" onClick=${() => setIsJsonModalOpen(false)}>Close</${Button}>
+                </div>
+
+                <div style=${{ padding: "12px 16px" }} className="col">
+                  <div className="muted" style=${{ fontSize: 12 }}>
+                    ${jsonModalMode === "copy"
+                      ? "Select all and copy (Ctrl/Cmd+C). Share this JSON; others can paste it here."
+                      : "Paste JSON exported from this app to load the same workspace."}
+                  </div>
+
+                  <${Textarea}
+                    ref=${jsonTextareaRef}
+                    rows=${12}
+                    value=${jsonText}
+                    readOnly=${jsonModalMode === "copy"}
+                    onInput=${(e) => setJsonText(e.target.value)}
+                    placeholder=${jsonModalMode === "paste" ? "Paste the JSON here…" : ""}
+                  />
+
+                  ${jsonError ? html`<div style=${{ fontSize: 12, color: theme === "dark" ? "#fca5a5" : "#b91c1c" }}>${jsonError}</div>` : null}
+
+                  ${jsonInfo ? html`
+                    <div className="row muted" style=${{ fontSize: 12 }}>
+                      <${I.Check} size=${16} /> ${jsonInfo}
+                    </div>
+                  ` : null}
+
+                  <div className="row" style=${{ justifyContent: "flex-end" }}>
+                    ${jsonModalMode === "copy" ? html`
+                      <${Button} variant="secondary" onClick=${() => {
+                        const el = jsonTextareaRef.current; if (!el) return;
+                        el.focus(); el.setSelectionRange(0, el.value.length);
+                        setJsonInfo("Selected — now press Ctrl/Cmd+C.");
+                      }}>Select all</${Button}>
+                      <${Button} onClick=${tryExecCopy}>Copy</${Button}>
+                    ` : html`
+                      <${Button} onClick=${importFromJsonText}>Import</${Button}>
+                    `}
+                    <${Button} variant="secondary" onClick=${() => setIsJsonModalOpen(false)}>Cancel</${Button}>
+                  </div>
+                </div>
+              </div>
+            </div>
+          ` : null}
+        </div>
+      `;
+    }
+
+    createRoot(document.getElementById("root")).render(html`<${VoiceSimilarityWorkspace} />`);
+  </script>
+</body>
+</html>
