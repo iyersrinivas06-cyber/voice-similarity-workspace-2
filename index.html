@@ -5,9 +5,24 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Voice Similarity Workspace</title>
 
-  <!-- ReactFlow CSS -->
   <link rel="stylesheet" href="https://unpkg.com/reactflow@11.11.4/dist/base.css" />
   <link rel="stylesheet" href="https://unpkg.com/reactflow@11.11.4/dist/style.css" />
+
+  <!-- IMPORTANT: enables importmap in more browsers -->
+  <script async src="https://unpkg.com/es-module-shims@1.10.0/dist/es-module-shims.js"></script>
+
+  <!-- IMPORTANT: force EVERY lib to share the SAME React singleton -->
+  <script type="importmap">
+  {
+    "imports": {
+      "react": "https://esm.sh/react@18.2.0",
+      "react-dom/client": "https://esm.sh/react-dom@18.2.0/client",
+      "reactflow": "https://esm.sh/reactflow@11.11.4?external=react,react-dom",
+      "lucide-react": "https://esm.sh/lucide-react@0.451.0?external=react",
+      "htm": "https://esm.sh/htm@3.1.1"
+    }
+  }
+  </script>
 
   <style>
     html, body { height: 100%; margin: 0; }
@@ -15,18 +30,6 @@
     #root { height: 100vh; }
     .react-flow__attribution { display: none !important; }
     * { box-sizing: border-box; }
-
-    /* simple utility-ish */
-    .row { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
-    .col { display:flex; flex-direction:column; gap:8px; }
-    .truncate { overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
-    .chip { display:inline-flex; align-items:center; gap:6px; font-size:12px; padding:6px 10px; border-radius:999px; border:1px solid var(--border); background:var(--pill); color:var(--text); cursor:pointer; }
-    .chip:hover { filter: brightness(1.05); }
-    .chip-x { opacity:0.75; font-weight:700; }
-    .divider { height:1px; width:100%; background:var(--border); }
-    .muted { color: var(--muted); }
-    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; }
-    .btn { user-select:none; }
   </style>
 </head>
 
@@ -34,26 +37,28 @@
   <div id="root"></div>
 
   <script type="module">
-    import React, { useCallback, useEffect, useMemo, useRef, useState } from "https://esm.sh/react@18.2.0";
-import { createRoot } from "https://esm.sh/react-dom@18.2.0/client?deps=react@18.2.0";
+    import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+    import { createRoot } from "react-dom/client";
+    import ReactFlow, {
+      Background,
+      Controls,
+      MiniMap,
+      addEdge,
+      useEdgesState,
+      useNodesState,
+      Handle,
+      Position
+    } from "reactflow";
+    import * as Lucide from "lucide-react";
+    import htm from "htm";
 
-// Force reactflow to use the same React instance (no bundled React)
-import ReactFlow, {
-  Background,
-  Controls,
-  MiniMap,
-  addEdge,
-  useEdgesState,
-  useNodesState,
-  Handle,
-  Position,
-} from "https://esm.sh/reactflow@11.11.4?deps=react@18.2.0,react-dom@18.2.0";
+    const html = htm.bind(React.createElement);
 
-// Force lucide-react to use the same React instance too
-import * as Lucide from "https://esm.sh/lucide-react@0.451.0?deps=react@18.2.0";
+    // ... keep the rest of your app code exactly as-is (HTM version) ...
 
-// htm is fine (no react dependency bundling)
-import htm from "https://esm.sh/htm@3.1.1";
+  </script>
+</body>
+</html>
 
     // -----------------------------
     // Speaking styles (Option A picker)
