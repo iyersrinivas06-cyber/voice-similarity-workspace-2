@@ -35,21 +35,25 @@
 
   <script type="module">
     import React, { useCallback, useEffect, useMemo, useRef, useState } from "https://esm.sh/react@18.2.0";
-    import { createRoot } from "https://esm.sh/react-dom@18.2.0/client";
-    import ReactFlow, {
-      Background,
-      Controls,
-      MiniMap,
-      addEdge,
-      useEdgesState,
-      useNodesState,
-      Handle,
-      Position,
-    } from "https://esm.sh/reactflow@11.11.4";
-    import * as Lucide from "https://esm.sh/lucide-react@0.451.0";
-    import htm from "https://esm.sh/htm@3.1.1";
+import { createRoot } from "https://esm.sh/react-dom@18.2.0/client?deps=react@18.2.0";
 
-    const html = htm.bind(React.createElement);
+// Force reactflow to use the same React instance (no bundled React)
+import ReactFlow, {
+  Background,
+  Controls,
+  MiniMap,
+  addEdge,
+  useEdgesState,
+  useNodesState,
+  Handle,
+  Position,
+} from "https://esm.sh/reactflow@11.11.4?deps=react@18.2.0,react-dom@18.2.0";
+
+// Force lucide-react to use the same React instance too
+import * as Lucide from "https://esm.sh/lucide-react@0.451.0?deps=react@18.2.0";
+
+// htm is fine (no react dependency bundling)
+import htm from "https://esm.sh/htm@3.1.1";
 
     // -----------------------------
     // Speaking styles (Option A picker)
