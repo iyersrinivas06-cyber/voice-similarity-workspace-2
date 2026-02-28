@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Voice Similarity Workspace</title>
+
+  <!-- ReactFlow CSS -->
+  <link rel="stylesheet" href="https://unpkg.com/reactflow@11.11.4/dist/base.css"/>
+  <link rel="stylesheet" href="https://unpkg.com/reactflow@11.11.4/dist/style.css"/>
+
+  <!-- Import map support -->
+  <script async src="https://unpkg.com/es-module-shims@1.10.0/dist/es-module-shims.js"></script>
+
+  <script type="importmap">
+  {
+    "imports": {
+      "react": "https://esm.sh/react@18.2.0",
+      "react-dom/client": "https://esm.sh/react-dom@18.2.0/client",
+      "react/jsx-runtime": "https://esm.sh/react@18.2.0/jsx-runtime",
+      "reactflow": "https://esm.sh/reactflow@11.11.4",
+      "lucide-react": "https://esm.sh/lucide-react@0.451.0"
+    }
+  }
+  </script>
+
+  <style>
+    html, body { height:100%; margin:0; }
+    body { font-family: ui-sans-serif, system-ui; }
+    #root { height:100vh; }
+    .react-flow__attribution { display:none !important; }
+  </style>
+
+  <!-- TSX runtime -->
+  <script type="module" src="https://esm.sh/tsx"></script>
+</head>
+
+<body>
+<div id="root"></div>
+
+<script type="text/tsx">
+
+import React, { useState } from "react";
+import { createRoot } from "react-dom/client";
+import ReactFlow, { Background, Controls } from "reactflow";
+
+function App() {
+  const [nodes, setNodes] = useState([
+    {
+      id: "1",
+      position: { x: 100, y: 100 },
+      data: { label: "Voice A" },
+      type: "default"
+    },
+    {
+      id: "2",
+      position: { x: 400, y: 100 },
+      data: { label: "Voice B" },
+      type: "default"
+    }
+  ]);
+
+  const [edges, setEdges] = useState([
+    { id: "e1-2", source: "1", target: "2", label: "8/10 similar", animated: true }
+  ]);
+
+  return (
+    <div style={{ width: "100%", height: "100%", background: "#0b0d12" }}>
+      <ReactFlow nodes={nodes} edges={edges} fitView>
+        <Background />
+        <Controls />
+      </ReactFlow>
+    </div>
+  );
+}
+
+createRoot(document.getElementById("root")!).render(<App />);
+
+</script>
+</body>
+</html>
